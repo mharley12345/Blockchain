@@ -5,12 +5,14 @@ import json
 from time import time
 from uuid import uuid4
 from flask import Flask, jsonify, request
+from flask_cors import CORS,cross_origin
+
 class Blockchain(object):
     def __init__(self):
         self.chain = []
         self.current_transactions = []
         # Create the genesis block
-        self.new_block(previous_hash=1, proof=100)
+        self.new_block(previous_hash=0, proof=100)
     def new_block(self, proof, previous_hash=None):
         """
         Create a new Block in the Blockchain
@@ -29,7 +31,7 @@ class Blockchain(object):
             'timestamp': time(),
             'transactions': self.current_transactions,
             'proof': proof,
-            'previous_hash': previous_hash
+            'previous_hash': previous_hash 
         }
         # Reset the current list of transactions
         self.current_transactions = []
@@ -37,6 +39,18 @@ class Blockchain(object):
         self.chain.append(block)
         # Return the new block
         return block
+
+    def new_transaction(self,sender,recipient,amount):
+        transaction = {
+        'sender': sender,
+        'recipient': recipient,
+        'amount': amount,
+        },
+
+        self.current_transactions.append(transaction)
+
+        return self.last_block['index'] + 1
+            
     def hash(self, block):
         """
         Creates a SHA-256 hash of a Block
@@ -80,14 +94,38 @@ class Blockchain(object):
         """
         guess = f"{block_string}{proof}".encode()
         guess_hash = hashlib.sha256(guess).hexdigest()
-        return guess_hash[:6] == "000000"
+        return guess_hash[:2] == "000"
 # Instantiate our Node
 app = Flask(__name__)
 # Generate a globally unique address for this node
 node_identifier = str(uuid4()).replace('-', '')
 # Instantiate the Blockchain
 blockchain = Blockchain()
+
+@app.route("/transaction/new", methods=['POST'])
+@cross_origin()
+def receive_new_transaction():
+    #     * use `request.get_json()` to pull the data out of the POST
+    # * check that 'sender', 'recipient', and 'amount' are present
+    #     * return a 400 error using `jsonify(response)` with a 'message'
+    # * upon success, return a 'message' indicating index of the block
+    #   containing the transaction
+    data = request.get_json()
+
+    required = ['sender', 'recipient', 'amount']
+    if not all(k in data for k in required):
+        return "Missing values", 400
+
+    index = blockchain.new_transaction(data['sender'],
+                                       data['recipient'],
+                                       data['amount'])
+
+    response = {'message': f'Transactions will be included in block {index}'}
+    return jsonify(response), 200
+
+
 @app.route('/mine', methods=['POST'])
+@cross_origin()
 def mine():
     # Run the proof of work algorithm to get the next proof
     # proof = blockchain.proof_of_work(blockchain.last_block)
@@ -123,7 +161,7 @@ def mine():
             'message':"New Block Forged",
             'index':new_block['index'],
             'timestamp':new_block['timestamp'],
-            'transaction':new_block['transactions'],
+            'transactions':new_block['transactions'],
             'proof':new_block['proof'],
             'previous_hash':new_block['previous_hash']
         }
@@ -131,6 +169,7 @@ def mine():
     else:
         return jsonify({'message':"Proof is NOT true"}),400
 @app.route('/chain', methods=['GET'])
+@cross_origin()
 def full_chain():
     response = {
         # TODO: Return the chain and its current length
@@ -139,6 +178,7 @@ def full_chain():
     }
     return jsonify(response), 200
 @app.route('/last_block', methods=['GET'])
+@cross_origin()
 def last_block():
     response = {
         'last_block':blockchain.last_block
